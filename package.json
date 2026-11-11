@@ -1,0 +1,17 @@
+{
+  "name": "majic",
+  "version": "1.0.0",
+  "description": "MAJIC - swap characters into any video and transfer motion onto any photo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/run-test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}

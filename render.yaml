@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: majic
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/config
+    envVars:
+      - key: KIE_API_KEY
+        sync: false
+      - key: ACCESS_CODES
+        sync: false

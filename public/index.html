@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAJIC — Swap anyone into any video</title>
+<style>
+  :root{--bg:#0b0716;--card:#150f27;--line:#2c2150;--ink:#f3efff;--mute:#a89cd0;--p1:#8b5cf6;--p2:#ec4899;--gold:#fbbf24;--ok:#34d399;--bad:#f87171}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:radial-gradient(1200px 600px at 50% -10%,#2a1660 0,var(--bg) 60%);color:var(--ink);min-height:100vh}
+  .wrap{max-width:980px;margin:0 auto;padding:28px 18px 60px}
+  header{text-align:center;margin-bottom:26px}
+  .logo{font-size:46px;font-weight:900;letter-spacing:6px;background:linear-gradient(90deg,var(--p1),var(--p2),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{color:var(--mute);margin-top:4px;font-size:16px}
+  .modes{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+  .mode{border:2px solid var(--line);background:var(--card);border-radius:16px;padding:16px;cursor:pointer;transition:.15s}
+  .mode:hover{border-color:var(--p1)}
+  .mode.on{border-color:var(--p2);box-shadow:0 0 0 3px rgba(236,72,153,.18)}
+  .mode b{font-size:18px}
+  .mode p{margin:6px 0 0;color:var(--mute);font-size:14px;line-height:1.4}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .drop{background:var(--card);border:2px dashed var(--line);border-radius:16px;padding:14px;min-height:250px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;cursor:pointer;position:relative;overflow:hidden}
+  .drop.has{border-style:solid;border-color:var(--p1)}
+  .drop h3{margin:0 0 4px}
+  .drop small{color:var(--mute)}
+  .drop video,.drop img{max-width:100%;max-height:260px;border-radius:10px}
+  .drop input{display:none}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:18px 0}
+  select,input[type=text]{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:15px}
+  .cost{color:var(--gold);font-weight:600}
+  button.go{width:100%;border:0;border-radius:14px;padding:16px;font-size:19px;font-weight:800;color:#fff;cursor:pointer;background:linear-gradient(90deg,var(--p1),var(--p2))}
+  button.go:disabled{opacity:.5;cursor:not-allowed}
+  .status{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:none}
+  .status.show{display:block}
+  .bar{height:8px;border-radius:6px;background:#241a44;overflow:hidden;margin-top:10px}
+  .bar i{display:block;height:100%;width:30%;background:linear-gradient(90deg,var(--p1),var(--p2));animation:slide 1.4s infinite ease-in-out}
+  @keyframes slide{0%{margin-left:-30%}100%{margin-left:100%}}
+  .err{color:var(--bad)}
+  .result video{width:100%;max-height:520px;border-radius:12px;background:#000}
+  a.dl{display:inline-block;margin-top:12px;background:var(--ok);color:#052e1c;font-weight:800;padding:12px 18px;border-radius:12px;text-decoration:none}
+  .tips{margin-top:26px;color:var(--mute);font-size:14px;line-height:1.6}
+  .tips b{color:var(--ink)}
+  footer{text-align:center;color:var(--mute);margin-top:34px;font-size:13px}
+  @media(max-width:640px){.modes,.grid{grid-template-columns:1fr}.logo{font-size:38px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">MAJIC</div>
+    <div class="tag">Swap anyone into any video. Make any photo move.</div>
+  </header>
+
+  <div class="modes" id="modes"></div>
+
+  <div class="grid">
+    <label class="drop" id="dropVideo">
+      <input type="file" id="video" accept="video/mp4,video/quicktime,video/x-matroska">
+      <div id="vInner"><h3>1. Add your video</h3><small>MP4 or MOV, up to 30 seconds, under 10 MB</small></div>
+    </label>
+    <label class="drop" id="dropImage">
+      <input type="file" id="image" accept="image/jpeg,image/png,image/webp">
+      <div id="iInner"><h3>2. Add your photo</h3><small>A clear photo of the person. JPG, PNG or WEBP, under 10 MB</small></div>
+    </label>
+  </div>
+
+  <div class="row">
+    <label>Quality
+      <select id="res"></select>
+    </label>
+    <span class="cost" id="cost"></span>
+    <input type="text" id="code" placeholder="Access code" style="display:none">
+  </div>
+
+  <button class="go" id="go" disabled>Make the MAJIC ✨</button>
+
+  <div class="status" id="status"></div>
+
+  <div class="tips">
+    <b>For the best result:</b> use a photo where the face and full body are easy to see, and a video with one clear person.
+    The video length sets the price. 480p is the cheapest and fastest. Videos usually take a few minutes.
+  </div>
+  <footer>MAJIC is a Mediad Innovation@2026</footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let cfg, mode = 'motion', videoFile = null, imageFile = null, videoSecs = 0, polling = null;
+
+function show(html, cls = '') { const s = $('status'); s.className = 'status show ' + cls; s.innerHTML = html; }
+function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function updateCost() {
+  const r = cfg.resolutions[$('res').value];
+  if (!videoSecs) { $('cost').textContent = ''; return; }
+  $('cost').textContent = `About $${(r.usdPerSec * videoSecs).toFixed(2)} for ${Math.round(videoSecs)}s`;
+}
+function updateGo() { $('go').disabled = !(videoFile && imageFile && cfg.ready); }
+
+async function init() {
+  cfg = await (await fetch('/api/config')).json();
+  $('modes').innerHTML = Object.entries(cfg.modes).map(([k, m]) =>
+    `<div class="mode ${k === mode ? 'on' : ''}" data-k="${k}"><b>${esc(m.label)}</b><p>${esc(m.help)}</p></div>`).join('');
+  document.querySelectorAll('.mode').forEach((el) => el.onclick = () => {
+    mode = el.dataset.k;
+    document.querySelectorAll('.mode').forEach((x) => x.classList.toggle('on', x === el));
+  });
+  $('res').innerHTML = Object.keys(cfg.resolutions).map((k) => `<option value="${k}">${k}${k === '480p' ? ' (cheapest)' : ''}</option>`).join('');
+  $('res').onchange = updateCost;
+  if (cfg.needsCode) { $('code').style.display = ''; $('code').value = localStorage.getItem('majicCode') || ''; }
+  if (!cfg.ready) show('MAJIC is not connected to kie.ai yet. The owner needs to add the API key.', 'err');
+}
+
+$('video').onchange = (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  if (f.size > cfg.maxMB * 1024 * 1024) return show(`That video is over ${cfg.maxMB} MB. Please use a smaller one.`, 'err');
+  const url = URL.createObjectURL(f);
+  const v = document.createElement('video'); v.src = url; v.controls = true; v.muted = true;
+  v.onloadedmetadata = () => {
+    if (v.duration > cfg.maxSeconds + 0.5) { videoFile = null; videoSecs = 0; updateGo(); return show(`That video is ${Math.round(v.duration)} seconds. The limit is ${cfg.maxSeconds}.`, 'err'); }
+    videoFile = f; videoSecs = v.duration;
+    $('vInner').innerHTML = ''; $('vInner').appendChild(v); $('dropVideo').classList.add('has');
+    $('status').className = 'status'; updateCost(); updateGo();
+  };
+};
+$('image').onchange = (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  if (f.size > cfg.maxMB * 1024 * 1024) return show(`That photo is over ${cfg.maxMB} MB. Please use a smaller one.`, 'err');
+  imageFile = f;
+  $('iInner').innerHTML = `<img src="${URL.createObjectURL(f)}" alt="your photo">`;
+  $('dropImage').classList.add('has'); updateGo();
+};
+
+function headers() { const c = $('code').value.trim(); if (c) localStorage.setItem('majicCode', c); return c ? { 'x-access-code': c } : {}; }
+
+$('go').onclick = async () => {
+  $('go').disabled = true;
+  show('Sending your files… <div class="bar"><i></i></div>');
+  const fd = new FormData();
+  fd.append('mode', mode); fd.append('resolution', $('res').value);
+  fd.append('video', videoFile); fd.append('image', imageFile);
+  try {
+    const r = await fetch('/api/generate', { method: 'POST', headers: headers(), body: fd });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Something went wrong.');
+    poll(j.taskId, Date.now());
+  } catch (e) { show(esc(e.message), 'err'); updateGo(); }
+};
+
+function poll(taskId, started) {
+  clearTimeout(polling);
+  const tick = async () => {
+    try {
+      const r = await fetch('/api/status/' + encodeURIComponent(taskId), { headers: headers() });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Could not check progress.');
+      if (j.state === 'success' && j.url) {
+        const dl = `/api/download?url=${encodeURIComponent(j.url)}${$('code').value.trim() ? '&code=' + encodeURIComponent($('code').value.trim()) : ''}`;
+        show(`<div class="result"><b>Done! ✨</b><video src="${esc(j.url)}" controls autoplay loop playsinline></video><a class="dl" href="${dl}">Download video</a></div>`);
+        return updateGo();
+      }
+      if (j.state === 'fail') { show(esc(j.error), 'err'); return updateGo(); }
+      const secs = Math.round((Date.now() - started) / 1000);
+      show(`Working on your video… (${secs}s) This usually takes a few minutes. Keep this page open.<div class="bar"><i></i></div>`);
+      polling = setTimeout(tick, 5000);
+    } catch (e) { show(esc(e.message), 'err'); updateGo(); }
+  };
+  tick();
+}
+init();
+</script>
+</body>
+</html>
