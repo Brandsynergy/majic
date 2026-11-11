@@ -22,8 +22,8 @@ const MODES = {
   motion: {
     label: 'Motion Transfer',
     help: 'Your photo comes alive and performs the moves from the video.',
-    resolutions: ['720p'],
-    price: { '720p': 0.063 }, // about 12.6 kie credits per second
+    resolutions: ['720p', '1080p'],
+    price: { '720p': 0.063, '1080p': 0.101 }, // 12.6 and 20.2 kie credits per second
     maxVideoMB: 100,
     maxImageMB: 10,
     minSeconds: 3,
