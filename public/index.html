@@ -78,7 +78,7 @@
 
   <div class="tips">
     <b>For the best result:</b> the video must show one real person (cartoons and animations usually fail), and the photo should show that kind of person's face and upper body clearly.
-    The video length sets the price. MAJIC removes camera cuts for you, because cuts make the AI blend two shots into a ghost. Character Swap can run at 480p to save money. Motion Transfer has 720p (cheaper) and 1080p (sharper, best for fast hand movements). Videos usually take a few minutes.
+    The video length sets the price. MAJIC removes camera cuts for you, because cuts make the AI blend two shots into a ghost. Both modes have 720p (cheaper) and 1080p (sharper, best for fast hand movements). Character Swap works on clips up to 10 seconds and replaces the person, including their outfit, with the person in your photo. Motion Transfer takes a few minutes; Character Swap can take about 10 minutes.
   </div>
   <footer>MAJIC is a Mediad Innovation@2026</footer>
 </div>
@@ -93,12 +93,14 @@ function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 function updateCost() {
   const price = cfg.modes[mode].price[$('res').value];
   if (!videoSecs) { $('cost').textContent = ''; return; }
-  $('cost').textContent = `About $${(price * videoSecs).toFixed(2)} for ${Math.round(videoSecs)}s (a little less if MAJIC trims cuts)`;
+  const cap = cfg.modes[mode].maxSeconds || cfg.maxSeconds;
+  const billed = Math.min(videoSecs, cap);
+  $('cost').textContent = `About $${(price * billed).toFixed(2)} for ${Math.round(billed)}s` + (videoSecs > cap ? ` (MAJIC uses the first ${cap}s of a longer video)` : ' (a little less if MAJIC trims cuts)');
 }
 function applyMode() {
   const m = cfg.modes[mode];
   $('res').innerHTML = m.resolutions.map((k, i) => `<option value="${k}">${k}${i === 0 && m.resolutions.length > 1 ? ' (cheapest)' : ''}</option>`).join('');
-  $('vHint') && ($('vHint').textContent = `MP4 or MOV, up to 30 seconds, under ${m.maxVideoMB} MB`);
+  $('vHint') && ($('vHint').textContent = `MP4 or MOV, up to ${m.maxSeconds || cfg.maxSeconds} seconds, under ${m.maxVideoMB} MB`);
   $('iHint') && ($('iHint').textContent = `A clear photo of the person. JPG, PNG or WEBP, under ${m.maxImageMB} MB`);
   updateCost();
 }

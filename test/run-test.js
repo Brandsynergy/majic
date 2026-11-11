@@ -74,7 +74,7 @@ fake.listen(4010, async () => {
     const cfg = await (await fetch(base + '/api/config')).json();
     check(cfg.ready && cfg.needsCode, 'config says ready and needs a code');
     check(!cfg.modes.motion_wan && cfg.modes.motion && cfg.modes.swap, 'page shows Motion Transfer and Character Swap only');
-    check(cfg.modes.motion.resolutions.join() === '720p' && cfg.modes.swap.resolutions.includes('480p'), 'qualities listed per mode');
+    check(cfg.modes.motion.resolutions.join() === '720p,1080p' && cfg.modes.swap.resolutions.join() === '720p,1080p' && cfg.modes.swap.maxSeconds === 10, 'qualities listed per mode');
 
     const post = async (mode, video, resolution = '480p', headers = H) => {
       const fd = new FormData();
@@ -86,14 +86,15 @@ fake.listen(4010, async () => {
     };
 
     const cutVideo = makeVideo('cut.mp4', [3, 7]); // one hard cut at 3s
-    let { r, j } = await post('swap', cutVideo, '480p', {});
+    let { r, j } = await post('swap', cutVideo, '720p', {});
     check(r.status === 401, 'rejects a missing access code');
 
     seen.uploads = [];
-    ({ r, j } = await post('swap', cutVideo));
+    ({ r, j } = await post('swap', cutVideo, '720p'));
     check(r.ok && j.taskId === 'task_test_1', 'swap job created');
-    check(seen.task.model === 'wan/2-2-animate-replace' && seen.task.input.resolution === '480p', 'swap uses Wan Replace at 480p');
-    check(seen.task.input.video_url && seen.task.input.image_url, 'swap sends video_url and image_url');
+    check(seen.task.model === 'wan/2-7-videoedit' && seen.task.input.resolution === '720p', 'swap uses Wan 2.7 Video Edit at 720p');
+    check(seen.task.input.video_url && seen.task.input.reference_image && /reference image/.test(seen.task.input.prompt), 'swap sends video, reference photo and prompt');
+    check(seen.task.input.duration >= 2 && seen.task.input.duration <= 10 && ['16:9', '9:16', '1:1'].includes(seen.task.input.aspect_ratio), 'swap duration and aspect ratio are valid');
     check(seen.auth === 'Bearer test-key', 'sends the API key');
     check(j.notes && j.notes.length === 1 && /camera cut/.test(j.notes[0]), 'tells the user a cut was found');
     const sentVideo = seen.uploads.find((f) => f.endsWith('.mp4'));
@@ -113,6 +114,11 @@ fake.listen(4010, async () => {
 
     ({ r, j } = await post('motion_wan', longVideo, '480p'));
     check(r.ok && seen.task.model === 'wan/2-2-animate-move' && seen.task.input.resolution === '720p', 'backup Wan motion engine works and is forced to 720p');
+
+    seen.uploads = [];
+    ({ r, j } = await post('swap', longVideo, '720p'));
+    const swapDur = duration(seen.uploads.find((f) => f.endsWith('.mp4')));
+    check(r.ok && swapDur > 9 && swapDur < 10.3 && seen.task.input.duration === 10 && j.notes.length === 1, `swap trims a long clip to 10s (${swapDur.toFixed(1)}s) and says so`);
 
     const choppy = makeVideo('choppy.mp4', [1, 1, 1, 1, 1, 1]);
     ({ r, j } = await post('motion', choppy, '720p'));

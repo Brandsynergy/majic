@@ -38,9 +38,37 @@ const MODES = {
       },
     }),
   },
+  // Character Swap: Wan 2.7 Video Edit (tested: replaces the person, keeps scene, lighting and pose)
   swap: {
     label: 'Character Swap',
     help: 'The person in the video is replaced by the person in your photo. The scene stays the same.',
+    resolutions: ['720p', '1080p'],
+    price: { '720p': 0.08, '1080p': 0.12 }, // 16 and 24 kie credits per second
+    maxVideoMB: 100,
+    maxImageMB: 30,
+    minSeconds: 2,
+    maxSeconds: 10, // this model edits clips of 2 to 10 seconds
+    build: (v, i, res, seconds, w, h) => ({
+      model: 'wan/2-7-videoedit',
+      input: {
+        video_url: v,
+        reference_image: i,
+        prompt: 'Replace the person in the video with the person shown in the reference image. Keep the exact same body movements, camera angle, background and lighting.',
+        resolution: res,
+        aspect_ratio: w && h ? (Math.abs(w / h - 1) < 0.1 ? '1:1' : w > h ? '16:9' : '9:16') : '16:9',
+        duration: Math.min(10, Math.max(2, Math.round(seconds))),
+        audio_setting: 'auto',
+        prompt_extend: false,
+        watermark: false,
+        nsfw_checker: false,
+      },
+    }),
+  },
+  // Backup swap engine, not shown on the page (older Wan 2.2 Replace, was failing on kie.ai)
+  swap_wan22: {
+    hidden: true,
+    label: 'Character Swap (Wan 2.2)',
+    help: '',
     resolutions: ['480p', '580p', '720p'],
     price: { '480p': 0.03, '580p': 0.0475, '720p': 0.0625 },
     maxVideoMB: 10,
@@ -111,7 +139,7 @@ app.get('/api/config', (req, res) => {
   res.json({
     needsCode: ACCESS_CODES.length > 0,
     maxSeconds: MAX_SECONDS,
-    modes: Object.fromEntries(Object.entries(MODES).filter(([, v]) => !v.hidden).map(([k, v]) => [k, { label: v.label, help: v.help, resolutions: v.resolutions, price: v.price, maxVideoMB: v.maxVideoMB, maxImageMB: v.maxImageMB }])),
+    modes: Object.fromEntries(Object.entries(MODES).filter(([, v]) => !v.hidden).map(([k, v]) => [k, { label: v.label, help: v.help, resolutions: v.resolutions, price: v.price, maxVideoMB: v.maxVideoMB, maxImageMB: v.maxImageMB, maxSeconds: v.maxSeconds || MAX_SECONDS }])),
     ready: Boolean(KIE_API_KEY),
   });
 });
@@ -142,7 +170,7 @@ app.post(
       let vp, ip;
       try {
         [vp, ip] = await Promise.all([
-          prepareVideo(video.buffer, { minSeconds: mode.minSeconds, maxSeconds: MAX_SECONDS }),
+          prepareVideo(video.buffer, { minSeconds: mode.minSeconds, maxSeconds: mode.maxSeconds || MAX_SECONDS }),
           prepareImage(image.buffer),
         ]);
       } catch (e) {
@@ -161,7 +189,7 @@ app.post(
       const r = await fetch(`${KIE_BASE}/api/v1/jobs/createTask`, {
         method: 'POST',
         headers: kieHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(mode.build(videoUrl, imageUrl, resolution, vp.seconds)),
+        body: JSON.stringify(mode.build(videoUrl, imageUrl, resolution, vp.seconds, vp.width, vp.height)),
       });
       const j = await r.json().catch(() => ({}));
       const taskId = j?.data?.taskId;
