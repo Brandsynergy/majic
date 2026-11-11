@@ -155,7 +155,12 @@ app.get('/api/status/:taskId', checkCode, async (req, res) => {
       return res.json({ state: 'success', url });
     }
     if (d.state === 'fail') {
-      return res.json({ state: 'fail', error: d.failMsg || 'The AI could not finish this one. Try a different video or photo.' });
+      console.error('kie.ai task failed:', req.params.taskId, d.failCode, d.failMsg);
+      const why = d.failMsg ? `kie.ai said: "${d.failMsg}". ` : '';
+      return res.json({
+        state: 'fail',
+        error: `${why}You were not charged. This AI needs a REAL person clearly visible in the video (not a cartoon or animation), and a clear photo of one person. Try a short clip of one real person, filmed from the front or side, and a photo showing their face and upper body.`,
+      });
     }
     res.json({ state: d.state || 'waiting' });
   } catch (e) {
