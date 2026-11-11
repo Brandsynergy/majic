@@ -56,11 +56,11 @@
   <div class="grid">
     <label class="drop" id="dropVideo">
       <input type="file" id="video" accept="video/mp4,video/quicktime,video/x-matroska">
-      <div id="vInner"><h3>1. Add your video</h3><small>MP4 or MOV, up to 30 seconds, under 10 MB</small></div>
+      <div id="vInner"><h3>1. Add your video</h3><small id="vHint">MP4 or MOV, up to 30 seconds</small></div>
     </label>
     <label class="drop" id="dropImage">
       <input type="file" id="image" accept="image/jpeg,image/png,image/webp">
-      <div id="iInner"><h3>2. Add your photo</h3><small>A clear photo of the person. JPG, PNG or WEBP, under 10 MB</small></div>
+      <div id="iInner"><h3>2. Add your photo</h3><small id="iHint">A clear photo of the person. JPG, PNG or WEBP</small></div>
     </label>
   </div>
 
@@ -78,7 +78,7 @@
 
   <div class="tips">
     <b>For the best result:</b> use a photo where the face and full body are easy to see, and a video with one clear person.
-    The video length sets the price. 480p is the cheapest and fastest. Videos usually take a few minutes.
+    The video length sets the price. Character Swap can run at 480p to save money. Motion Transfer is 720p only. Videos usually take a few minutes.
   </div>
   <footer>MAJIC is a Mediad Innovation@2026</footer>
 </div>
@@ -95,6 +95,13 @@ function updateCost() {
   if (!videoSecs) { $('cost').textContent = ''; return; }
   $('cost').textContent = `About $${(r.usdPerSec * videoSecs).toFixed(2)} for ${Math.round(videoSecs)}s`;
 }
+function applyMode() {
+  const m = cfg.modes[mode];
+  $('res').innerHTML = m.resolutions.map((k, i) => `<option value="${k}">${k}${i === 0 && m.resolutions.length > 1 ? ' (cheapest)' : ''}</option>`).join('');
+  $('vHint') && ($('vHint').textContent = `MP4 or MOV, up to 30 seconds, under ${m.maxVideoMB} MB`);
+  $('iHint') && ($('iHint').textContent = `A clear photo of the person. JPG, PNG or WEBP, under ${m.maxImageMB} MB`);
+  updateCost();
+}
 function updateGo() { $('go').disabled = !(videoFile && imageFile && cfg.ready); }
 
 async function init() {
@@ -104,16 +111,17 @@ async function init() {
   document.querySelectorAll('.mode').forEach((el) => el.onclick = () => {
     mode = el.dataset.k;
     document.querySelectorAll('.mode').forEach((x) => x.classList.toggle('on', x === el));
+    applyMode();
   });
-  $('res').innerHTML = Object.keys(cfg.resolutions).map((k) => `<option value="${k}">${k}${k === '480p' ? ' (cheapest)' : ''}</option>`).join('');
   $('res').onchange = updateCost;
+  applyMode();
   if (cfg.needsCode) { $('code').style.display = ''; $('code').value = localStorage.getItem('majicCode') || ''; }
   if (!cfg.ready) show('MAJIC is not connected to kie.ai yet. The owner needs to add the API key.', 'err');
 }
 
 $('video').onchange = (e) => {
   const f = e.target.files[0]; if (!f) return;
-  if (f.size > cfg.maxMB * 1024 * 1024) return show(`That video is over ${cfg.maxMB} MB. Please use a smaller one.`, 'err');
+  if (f.size > cfg.modes[mode].maxVideoMB * 1024 * 1024) return show(`For ${cfg.modes[mode].label} the video must be under ${cfg.modes[mode].maxVideoMB} MB.`, 'err');
   const url = URL.createObjectURL(f);
   const v = document.createElement('video'); v.src = url; v.controls = true; v.muted = true;
   v.onloadedmetadata = () => {
@@ -125,7 +133,7 @@ $('video').onchange = (e) => {
 };
 $('image').onchange = (e) => {
   const f = e.target.files[0]; if (!f) return;
-  if (f.size > cfg.maxMB * 1024 * 1024) return show(`That photo is over ${cfg.maxMB} MB. Please use a smaller one.`, 'err');
+  if (f.size > cfg.modes[mode].maxImageMB * 1024 * 1024) return show(`For ${cfg.modes[mode].label} the photo must be under ${cfg.modes[mode].maxImageMB} MB.`, 'err');
   imageFile = f;
   $('iInner').innerHTML = `<img src="${URL.createObjectURL(f)}" alt="your photo">`;
   $('dropImage').classList.add('has'); updateGo();

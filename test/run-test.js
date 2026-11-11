@@ -63,6 +63,8 @@ fake.listen(4010, async () => {
     r = await fetch(base + '/api/generate', { method: 'POST', headers: { 'x-access-code': 'letmein' }, body: mk('motion') });
     await r.json();
     check(seen.task.model === 'wan/2-2-animate-move', 'motion uses the Move model');
+    check(seen.task.input.resolution === '720p', 'motion is forced to 720p even when 480p is requested');
+    check(cfg.modes.motion.resolutions.join() === '720p' && cfg.modes.swap.resolutions.includes('480p'), 'config lists the right qualities per mode');
 
     let s = await (await fetch(base + '/api/status/task_test_1', { headers: { 'x-access-code': 'letmein' } })).json();
     check(s.state === 'generating' || s.state === 'success', 'status works while running');

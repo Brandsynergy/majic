@@ -12,7 +12,7 @@ const KIE_UPLOAD_BASE = process.env.KIE_UPLOAD_BASE || 'https://kieai.redpandaai
 const ACCESS_CODES = (process.env.ACCESS_CODES || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // kie.ai limit: 10 MB per file
+const MAX_FILE_BYTES = 100 * 1024 * 1024; // biggest allowed by any mode; each mode is checked again below
 const MAX_SECONDS = 30;
 
 // Two modes, both powered by Wan 2.2 Animate on kie.ai
@@ -21,11 +21,17 @@ const MODES = {
     label: 'Motion Transfer',
     model: 'wan/2-2-animate-move',
     help: 'Your photo comes alive and performs the moves from the video.',
+    resolutions: ['720p'], // kie.ai only offers 720p for this mode
+    maxVideoMB: 100,
+    maxImageMB: 5,
   },
   swap: {
     label: 'Character Swap',
     model: 'wan/2-2-animate-replace',
     help: 'The person in the video is replaced by the person in your photo. The scene stays the same.',
+    resolutions: ['480p', '580p', '720p'],
+    maxVideoMB: 10,
+    maxImageMB: 10,
   },
 };
 // kie.ai credits per video-second (1 credit is about $0.005)
@@ -79,8 +85,7 @@ app.get('/api/config', (req, res) => {
   res.json({
     needsCode: ACCESS_CODES.length > 0,
     maxSeconds: MAX_SECONDS,
-    maxMB: MAX_FILE_BYTES / 1024 / 1024,
-    modes: Object.fromEntries(Object.entries(MODES).map(([k, v]) => [k, { label: v.label, help: v.help }])),
+    modes: Object.fromEntries(Object.entries(MODES).map(([k, v]) => [k, { label: v.label, help: v.help, resolutions: v.resolutions, maxVideoMB: v.maxVideoMB, maxImageMB: v.maxImageMB }])),
     resolutions: RESOLUTIONS,
     ready: Boolean(KIE_API_KEY),
   });
@@ -94,11 +99,13 @@ app.post(
     try {
       if (!KIE_API_KEY) return res.status(500).json({ error: 'The app is not connected to kie.ai yet (missing API key).' });
       const mode = MODES[req.body.mode];
-      const resolution = RESOLUTIONS[req.body.resolution] ? req.body.resolution : '480p';
       const video = req.files?.video?.[0];
       const image = req.files?.image?.[0];
       if (!mode) return res.status(400).json({ error: 'Please choose a mode.' });
       if (!video || !image) return res.status(400).json({ error: 'Please add both a video and a photo.' });
+      const resolution = mode.resolutions.includes(req.body.resolution) ? req.body.resolution : mode.resolutions[0];
+      if (video.size > mode.maxVideoMB * 1024 * 1024) return res.status(400).json({ error: `For ${mode.label} the video must be under ${mode.maxVideoMB} MB.` });
+      if (image.size > mode.maxImageMB * 1024 * 1024) return res.status(400).json({ error: `For ${mode.label} the photo must be under ${mode.maxImageMB} MB.` });
       if (!/^video\/(mp4|quicktime|x-matroska)$/.test(video.mimetype)) {
         return res.status(400).json({ error: 'The video must be MP4, MOV or MKV.' });
       }
@@ -177,7 +184,7 @@ app.get('/api/download', checkCode, async (req, res) => {
 
 app.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ error: `Each file must be under ${MAX_FILE_BYTES / 1024 / 1024} MB.` });
+    return res.status(400).json({ error: 'That file is too big.' });
   }
   console.error(err);
   res.status(500).json({ error: 'Something went wrong.' });
