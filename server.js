@@ -3,6 +3,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const { prepareVideo, prepareImage } = require('./lib/prep');
 
 const PORT = process.env.PORT || 3000;
 const KIE_API_KEY = process.env.KIE_API_KEY || '';
@@ -17,30 +18,55 @@ const MAX_SECONDS = 30;
 
 // Two modes, both powered by Wan 2.2 Animate on kie.ai
 const MODES = {
+  // Better quality: Kling Motion Control (same price as the Wan option)
   motion: {
     label: 'Motion Transfer',
-    model: 'wan/2-2-animate-move',
     help: 'Your photo comes alive and performs the moves from the video.',
-    resolutions: ['720p'], // kie.ai only offers 720p for this mode
+    resolutions: ['720p'],
+    price: { '720p': 0.063 }, // about 12.6 kie credits per second
     maxVideoMB: 100,
-    maxImageMB: 5,
+    maxImageMB: 10,
+    minSeconds: 3,
+    build: (v, i, res, seconds) => ({
+      model: 'kling-2.6/motion-control',
+      input: {
+        input_urls: [i],
+        video_urls: [v],
+        mode: res,
+        // "image": follows your photo's look closely (video up to 10s); "video": follows the video's framing (up to 30s)
+        character_orientation: seconds <= 10 ? 'image' : 'video',
+      },
+    }),
   },
   swap: {
     label: 'Character Swap',
-    model: 'wan/2-2-animate-replace',
     help: 'The person in the video is replaced by the person in your photo. The scene stays the same.',
     resolutions: ['480p', '580p', '720p'],
+    price: { '480p': 0.03, '580p': 0.0475, '720p': 0.0625 },
     maxVideoMB: 10,
     maxImageMB: 10,
+    minSeconds: 2,
+    build: (v, i, res) => ({
+      model: 'wan/2-2-animate-replace',
+      input: { video_url: v, image_url: i, resolution: res, nsfw_checker: false },
+    }),
+  },
+  // Backup motion engine, not shown on the page (older Wan model, lower quality)
+  motion_wan: {
+    hidden: true,
+    label: 'Motion Transfer (Wan)',
+    help: '',
+    resolutions: ['720p'],
+    price: { '720p': 0.0625 },
+    maxVideoMB: 100,
+    maxImageMB: 5,
+    minSeconds: 2,
+    build: (v, i, res) => ({
+      model: 'wan/2-2-animate-move',
+      input: { video_url: v, image_url: i, resolution: res, nsfw_checker: false },
+    }),
   },
 };
-// kie.ai credits per video-second (1 credit is about $0.005)
-const RESOLUTIONS = {
-  '480p': { creditsPerSec: 6, usdPerSec: 0.03 },
-  '580p': { creditsPerSec: 9.5, usdPerSec: 0.0475 },
-  '720p': { creditsPerSec: 12.5, usdPerSec: 0.0625 },
-};
-
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -85,8 +111,7 @@ app.get('/api/config', (req, res) => {
   res.json({
     needsCode: ACCESS_CODES.length > 0,
     maxSeconds: MAX_SECONDS,
-    modes: Object.fromEntries(Object.entries(MODES).map(([k, v]) => [k, { label: v.label, help: v.help, resolutions: v.resolutions, maxVideoMB: v.maxVideoMB, maxImageMB: v.maxImageMB }])),
-    resolutions: RESOLUTIONS,
+    modes: Object.fromEntries(Object.entries(MODES).filter(([, v]) => !v.hidden).map(([k, v]) => [k, { label: v.label, help: v.help, resolutions: v.resolutions, price: v.price, maxVideoMB: v.maxVideoMB, maxImageMB: v.maxImageMB }])),
     ready: Boolean(KIE_API_KEY),
   });
 });
@@ -113,25 +138,37 @@ app.post(
         return res.status(400).json({ error: 'The photo must be JPG, PNG or WEBP.' });
       }
 
+      // 1) get the files ready (find cuts, standard format)
+      let vp, ip;
+      try {
+        [vp, ip] = await Promise.all([
+          prepareVideo(video.buffer, { minSeconds: mode.minSeconds, maxSeconds: MAX_SECONDS }),
+          prepareImage(image.buffer),
+        ]);
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+      if (vp.buffer.length > mode.maxVideoMB * 1024 * 1024) {
+        return res.status(400).json({ error: `After preparing, the video is still over ${mode.maxVideoMB} MB. Please use a shorter clip.` });
+      }
+
+      // 2) upload to kie.ai and start the job
       const [videoUrl, imageUrl] = await Promise.all([
-        uploadToKie(video, 'majic/videos'),
-        uploadToKie(image, 'majic/images'),
+        uploadToKie({ buffer: vp.buffer, mimetype: 'video/mp4', originalname: 'clip.mp4' }, 'majic/videos'),
+        uploadToKie({ buffer: ip.buffer, mimetype: 'image/jpeg', originalname: 'photo.jpg' }, 'majic/images'),
       ]);
 
       const r = await fetch(`${KIE_BASE}/api/v1/jobs/createTask`, {
         method: 'POST',
         headers: kieHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          model: mode.model,
-          input: { video_url: videoUrl, image_url: imageUrl, resolution, nsfw_checker: false },
-        }),
+        body: JSON.stringify(mode.build(videoUrl, imageUrl, resolution, vp.seconds)),
       });
       const j = await r.json().catch(() => ({}));
       const taskId = j?.data?.taskId;
       if (!r.ok || j.code !== 200 || !taskId) {
         return res.status(502).json({ error: j?.msg || `kie.ai refused the job (${r.status}).` });
       }
-      res.json({ taskId });
+      res.json({ taskId, notes: vp.notes, seconds: Math.round(vp.seconds * 10) / 10 });
     } catch (e) {
       console.error('generate error:', e.message);
       res.status(500).json({ error: e.message || 'Something went wrong.' });

@@ -78,7 +78,7 @@
 
   <div class="tips">
     <b>For the best result:</b> the video must show one real person (cartoons and animations usually fail), and the photo should show that kind of person's face and upper body clearly.
-    The video length sets the price. Character Swap can run at 480p to save money. Motion Transfer is 720p only. Videos usually take a few minutes.
+    The video length sets the price. MAJIC removes camera cuts for you, because cuts make the AI blend two shots into a ghost. Character Swap can run at 480p to save money. Motion Transfer is 720p only. Videos usually take a few minutes.
   </div>
   <footer>MAJIC is a Mediad Innovation@2026</footer>
 </div>
@@ -91,9 +91,9 @@ function show(html, cls = '') { const s = $('status'); s.className = 'status sho
 function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 function updateCost() {
-  const r = cfg.resolutions[$('res').value];
+  const price = cfg.modes[mode].price[$('res').value];
   if (!videoSecs) { $('cost').textContent = ''; return; }
-  $('cost').textContent = `About $${(r.usdPerSec * videoSecs).toFixed(2)} for ${Math.round(videoSecs)}s`;
+  $('cost').textContent = `About $${(price * videoSecs).toFixed(2)} for ${Math.round(videoSecs)}s (a little less if MAJIC trims cuts)`;
 }
 function applyMode() {
   const m = cfg.modes[mode];
@@ -151,11 +151,12 @@ $('go').onclick = async () => {
     const r = await fetch('/api/generate', { method: 'POST', headers: headers(), body: fd });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'Something went wrong.');
-    poll(j.taskId, Date.now());
+    poll(j.taskId, Date.now(), j.notes || []);
   } catch (e) { show(esc(e.message), 'err'); updateGo(); }
 };
 
-function poll(taskId, started) {
+function poll(taskId, started, notes) {
+  const noteHtml = notes.length ? `<p style="color:var(--gold)">${notes.map(esc).join('<br>')}</p>` : '';
   clearTimeout(polling);
   const tick = async () => {
     try {
@@ -164,12 +165,12 @@ function poll(taskId, started) {
       if (!r.ok) throw new Error(j.error || 'Could not check progress.');
       if (j.state === 'success' && j.url) {
         const dl = `/api/download?url=${encodeURIComponent(j.url)}${$('code').value.trim() ? '&code=' + encodeURIComponent($('code').value.trim()) : ''}`;
-        show(`<div class="result"><b>Done! ✨</b><video src="${esc(j.url)}" controls autoplay loop playsinline></video><a class="dl" href="${dl}">Download video</a></div>`);
+        show(`<div class="result"><b>Done! ✨</b>${noteHtml}<video src="${esc(j.url)}" controls autoplay loop playsinline></video><a class="dl" href="${dl}">Download video</a></div>`);
         return updateGo();
       }
       if (j.state === 'fail') { show(esc(j.error), 'err'); return updateGo(); }
       const secs = Math.round((Date.now() - started) / 1000);
-      show(`Working on your video… (${secs}s) This usually takes a few minutes. Keep this page open.<div class="bar"><i></i></div>`);
+      show(`Working on your video… (${secs}s) This usually takes a few minutes. Keep this page open.${noteHtml}<div class="bar"><i></i></div>`);
       polling = setTimeout(tick, 5000);
     } catch (e) { show(esc(e.message), 'err'); updateGo(); }
   };
